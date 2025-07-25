@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Spy Dashboard</title>
+</head>
+<body>
+  <h1>ChatGPT Decoder</h1>
+
+  <input id="prompt" type="text" placeholder="Enter your message..." />
+  <button onclick="askGPT()">Ask</button>
+
+  <pre id="response" style="white-space: pre-wrap; margin-top: 20px;"></pre>
+
+  <script>
+    async function askGPT() {
+      const prompt = document.getElementById("prompt").value;
+
+      const res = await fetch("/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+      });
+
+      const data = await res.json();
+      document.getElementById("response").innerText = data.response || data.error;
+    }
+  </script>
+</body>
+</html>
