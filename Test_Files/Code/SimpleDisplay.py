@@ -52,28 +52,41 @@ class Display():
         if len(line) > 0:
             self.linesOfText.append(line)
 
-    def displayText(self, startRow:int, offset=0) -> None:
+    def displayText(self, offset=0) -> None:
         # Clear display
         self.oled.fill(0)
 
         #Limit Start Row
+        startRow = self.startingLine
         startRow = min(len(self.linesOfText)-MAX_LINES+MAX_EMPTY_LINES, startRow)
-        print(startRow)
         startRow = max(0,startRow)
 
-        print(startRow)
         # Print Lines
-        # for i in range(startRow, len(self.linesOfText)):
-        #     if (i+startRow) < len(self.linesOfText):
-        #         self.oled.text(self.linesOfText[i+startRow], 0, i*ROW_HEIGHT + offset)
+        for i in range(MAX_LINES):
+            if (i+startRow) >= len(self.linesOfText):
+                break
+            self.oled.text(self.linesOfText[i+startRow], 0, i*ROW_HEIGHT + offset)
 
         # Show on OLED
         self.oled.show()
 
-    def shiftText(self, shift:int) -> None:
+    def shiftStartLine(self, shift:int) -> None:
         #Shift starting line
         self.startingLine += shift
 
         #Keep Starting line in bounds
         self.startingLine = min(len(self.linesOfText)-MAX_LINES+MAX_EMPTY_LINES, self.startingLine)
         self.startingLine = max(0,self.startingLine)
+
+    def PrintMessage(self, text:str) -> None:
+        self.parseMessage(text)
+        self.displayText()
+
+    def ScrollUp(self) -> None:
+        self.shiftStartLine(-1)
+        self.displayText()
+
+    def ScrollDown(self) -> None:
+        self.shiftStartLine(1)
+        self.displayText()
+
