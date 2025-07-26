@@ -15,6 +15,7 @@ APP.use(cors({ origin: "*" }));
 APP.use(express.json());
 
 // Initialize socket.io
+
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -22,8 +23,8 @@ const io = new Server(server, {
   },
 });
 
-// MQTT Connection
 const CLIENTID = "frontend";
+
 const client = MQTT.connect(process.env.CONNECT_URL, {
   clientId: CLIENTID,
   clean: true,
@@ -102,41 +103,45 @@ io.on("connection", (socket) => {
     );
 
     pythonProcess.stdout.on("data", (data) => {
-      console.log(`📷 Python output: ${data}`);
+      console.log(`Python output: ${data}`);
     });
 
     pythonProcess.stderr.on("data", (data) => {
-      console.error(`🐍 Python error: ${data}`);
+      console.error(`Python error: ${data}`);
     });
 
     pythonProcess.on("close", (code) => {
-      console.log(`🔚 Python finished with code ${code}`);
-      socket.emit("picture_taken", {
-        success: code === 0,
-        message:
-          code === 0
-            ? "Picture analyzed successfully!"
-            : "Failed to analyze picture",
-      });
+      console.log(`Python script finished with code ${code}`);
+      if (code === 0) {
+        socket.emit("picture_taken", {
+          success: true,
+          message: "Picture analyzed successfully!",
+        });
+      } else {
+        socket.emit("picture_taken", {
+          success: false,
+          message: "Failed to analyze picture",
+        });
+      }
     });
   });
 
   socket.on("disconnect", () => {
-    console.log("❎ Frontend disconnected:", socket.id);
+    console.log("Frontend disconnected from socket");
   });
 });
 
-// Periodic broadcast (optional)
 setInterval(() => {
   io.emit("temp", latestTemp);
+  io.emit("ultrasonic", latestUltrasonic);
   io.emit("humidity", latestHumidity);
   io.emit("light", latestLight);
-  io.emit("ultrasonic", latestUltrasonic);
 }, 1000);
+const axios = require("axios");
 
-// ChatGPT proxy endpoint
 APP.post("/api/chatgpt", async (req, res) => {
   const { prompt } = req.body;
+
   try {
     const gptRes = await axios.post(
       "https://api.openai.com/v1/chat/completions",
@@ -151,15 +156,28 @@ APP.post("/api/chatgpt", async (req, res) => {
         },
       }
     );
+
     const reply = gptRes.data.choices[0].message.content;
     res.json({ response: reply });
   } catch (error) {
-    console.error("❌ ChatGPT Error:", error.response?.data || error.message);
+    console.error("❌ GPT Error:", error.response?.data || error.message);
     res.status(500).json({ error: "ChatGPT call failed" });
   }
 });
 
-// Start server
 server.listen(8000, () => {
-  console.log("🚀 Server running on http://localhost:8000");
+  console.log("Server is running on port 8000");
+});
+
+client.on("message", (TOPIC, payload) => {
+  console.log("Received from broker:", TOPIC, payload.toString());
+  if (TOPIC === "temp") {
+    latestTemp = payload.toString();
+  } else if (TOPIC === "ultrasonic") {
+    latestUltrasonic = payload.toString();
+  } else if (TOPIC === "humidity") {
+    latestHumidity = payload.toString();
+  } else if (TOPIC === "light") {
+    latestLight = payload.toString();
+  }
 });

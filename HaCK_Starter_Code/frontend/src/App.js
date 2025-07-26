@@ -35,6 +35,9 @@ function App() {
 
       {/* ✅ Status update (optional) */}
       {pictureStatus && <p style={{ color: "green" }}>{pictureStatus}</p>}
+      
+      {/* 👇 Insert ChatGPT panel here */}
+      <ChatGPTDecoder />
     </div>
   );
 }
