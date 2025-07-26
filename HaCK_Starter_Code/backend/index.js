@@ -8,7 +8,6 @@ const { spawn } = require("child_process");
 const APP = express();
 const server = http.createServer(APP);
 const { Server } = require("socket.io");
-const axios = require("axios");
 
 // Enable CORS for frontend
 APP.use(cors({ origin: "*" }));
