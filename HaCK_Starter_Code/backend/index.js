@@ -83,6 +83,22 @@ client.on('connect', async () => {
       console.log("Subscribed to 'light'");
     }
   });
+
+  client.subscribe("pi1", (err) => {
+    if (err) {
+      console.error("Subscription error for 'pi1': ", err);
+    } else {
+      console.log("Subscribed to 'pi1'");
+    }
+  });
+
+  client.subscribe("pi2", (err) => {
+    if (err) {
+      console.error("Subscription error for 'pi2': ", err);
+    } else {
+      console.log("Subscribed to 'pi2'");
+    }
+  });
 });
 
 
@@ -98,7 +114,8 @@ let latestTemp = null;
 let latestUltrasonic = null;
 let latestHumidity = null;
 let latestLight = null;
-let pi1 = null;
+let pi1 = 0;
+let pi2 = 0;
 
 io.on("connection", (socket) => {
   console.log("Frontend connected to socket");
@@ -116,6 +133,10 @@ io.on("connection", (socket) => {
   socket.on('display', (message) => {
     console.log('Received message from frontend:', message);
     client.publish("display", message.toString());
+  });
+  socket.on('display2', (message) => {
+    console.log('Received message from frontend:', message);
+    client.publish("display2", message.toString());
   });
 
   // Handle take picture request
@@ -157,6 +178,7 @@ setInterval(() => {
   io.emit('humidity', latestHumidity);
   io.emit('light', latestLight)
   io.emit('pi1', pi1)
+  io.emit('pi2', pi2)
 }, 1000);
 
 server.listen(8000, () => {
@@ -179,7 +201,9 @@ client.on('message', (TOPIC, payload) => {
   }
   else if ( TOPIC === 'pi1') {
     pi1 = payload.toString();
-    console.log(payload.toString())
+  }
+  else if ( TOPIC === 'pi2') {
+    pi2 = payload.toString();
   }
 });
 
