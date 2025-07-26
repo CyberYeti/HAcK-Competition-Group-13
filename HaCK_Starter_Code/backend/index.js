@@ -8,7 +8,13 @@ const { spawn } = require("child_process");
 const APP = express();
 const server = http.createServer(APP);
 const { Server } = require("socket.io");
+const axios = require("axios");
 
+// Enable CORS for frontend
+APP.use(cors({ origin: "*" }));
+APP.use(express.json());
+
+// Initialize socket.io
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -16,8 +22,8 @@ const io = new Server(server, {
   },
 });
 
+// MQTT Connection
 const CLIENTID = "frontend";
-
 const client = MQTT.connect(process.env.CONNECT_URL, {
   clientId: CLIENTID,
   clean: true,
@@ -25,102 +31,68 @@ const client = MQTT.connect(process.env.CONNECT_URL, {
   username: process.env.MQTT_USER,
   password: process.env.MQTT_PASS,
   reconnectPeriod: 10000,
-  debug: true,
-  rejectUnauthorized: false, // Add this line for testing, should be removed in production
+  rejectUnauthorized: false, // ⚠️ Use false only for testing
 });
 
-// Used for debugging
+// MQTT Debugging
+client.on("error", (err) => console.error("❌ MQTT Error:", err));
+client.on("close", () => console.log("🔌 MQTT Connection closed"));
+client.on("offline", () => console.log("⚠️ MQTT Client offline"));
+client.on("reconnect", () => console.log("🔁 MQTT Reconnecting..."));
 
-client.on("error", function (error) {
-  console.error("Connection error: ", error);
-});
-
-client.on("close", function () {
-  console.log("Connection closed");
-});
-
-client.on("offline", function () {
-  console.log("Client went offline");
-});
-
-client.on("reconnect", function () {
-  console.log("Attempting to reconnect...");
-});
-
-// MQTT Connection
-
-client.on("connect", async () => {
-  console.log("Connected");
-
-  client.subscribe("ultrasonic", (err) => {
-    if (err) {
-      console.error("Subscription error for 'ultrasonic': ", err);
-    } else {
-      console.log("Subscribed to 'ultrasonic'");
-    }
-  });
-
-  client.subscribe("temp", (err) => {
-    if (err) {
-      console.error("Subscription error for 'temp': ", err);
-    } else {
-      console.log("Subscribed to 'temp'");
-    }
-  });
-
-  client.subscribe("humidity", (err) => {
-    if (err) {
-      console.error("Subscription error for 'temp': ", err);
-    } else {
-      console.log("Subscribed to 'humidity'");
-    }
-  });
-
-  client.subscribe("light", (err) => {
-    if (err) {
-      console.error("Subscription error for 'light': ", err);
-    } else {
-      console.log("Subscribed to 'light'");
-    }
-  });
-});
-
-const corsOptions = {
-  origin: "*",
-};
-
-APP.use(cors(corsOptions));
-APP.use(express.json());
-
-// Readings from sensors
+// Sensor state
 let latestTemp = null;
-let latestUltrasonic = null;
 let latestHumidity = null;
 let latestLight = null;
+let latestUltrasonic = null;
 
+// MQTT Topics to subscribe to
+const topics = ["temp", "humidity", "light", "ultrasonic"];
+
+// On MQTT Connect
+client.on("connect", () => {
+  console.log("✅ MQTT Connected");
+  topics.forEach((topic) => {
+    client.subscribe(topic, (err) => {
+      if (err) {
+        console.error(`❌ Subscription failed: ${topic}`, err);
+      } else {
+        console.log(`📡 Subscribed to '${topic}'`);
+      }
+    });
+  });
+});
+
+// Receive MQTT messages
+client.on("message", (topic, payload) => {
+  const value = payload.toString();
+  console.log(`📥 ${topic}: ${value}`);
+
+  if (topic === "temp") latestTemp = value;
+  if (topic === "humidity") latestHumidity = value;
+  if (topic === "light") latestLight = value;
+  if (topic === "ultrasonic") latestUltrasonic = value;
+
+  io.emit(topic, value); // 📤 Emit to frontend via socket.io
+});
+
+// Socket.IO handlers
 io.on("connection", (socket) => {
-  console.log("Frontend connected to socket");
+  console.log("🧠 Frontend connected:", socket.id);
 
-  // Send the latest sensor data to the newly connected client
-  if (latestTemp) {
-    socket.emit("temp", latestTemp);
-  }
+  // Send latest on connect
+  if (latestTemp) socket.emit("temp", latestTemp);
+  if (latestHumidity) socket.emit("humidity", latestHumidity);
+  if (latestLight) socket.emit("light", latestLight);
   if (latestUltrasonic) socket.emit("ultrasonic", latestUltrasonic);
-  if (latestLight) {
-    socket.emit("light", latestLight);
-  }
 
-  // Listen for messages from the frontend
   socket.on("display", (message) => {
-    console.log("Received message from frontend:", message);
+    console.log("📲 Message from frontend:", message);
     client.publish("display", message.toString());
   });
 
-  // Handle take picture request
   socket.on("take_picture", () => {
-    console.log("📸 Taking picture and getting AI description...");
-
-    // Execute the Python script
+    console.log("📸 Taking picture...");
     const pythonProcess = spawn(
       "python3",
       ["../AI/receive.py", "get_description"],
@@ -130,45 +102,41 @@ io.on("connection", (socket) => {
     );
 
     pythonProcess.stdout.on("data", (data) => {
-      console.log(`Python output: ${data}`);
+      console.log(`📷 Python output: ${data}`);
     });
 
     pythonProcess.stderr.on("data", (data) => {
-      console.error(`Python error: ${data}`);
+      console.error(`🐍 Python error: ${data}`);
     });
 
     pythonProcess.on("close", (code) => {
-      console.log(`Python script finished with code ${code}`);
-      if (code === 0) {
-        socket.emit("picture_taken", {
-          success: true,
-          message: "Picture analyzed successfully!",
-        });
-      } else {
-        socket.emit("picture_taken", {
-          success: false,
-          message: "Failed to analyze picture",
-        });
-      }
+      console.log(`🔚 Python finished with code ${code}`);
+      socket.emit("picture_taken", {
+        success: code === 0,
+        message:
+          code === 0
+            ? "Picture analyzed successfully!"
+            : "Failed to analyze picture",
+      });
     });
   });
 
   socket.on("disconnect", () => {
-    console.log("Frontend disconnected from socket");
+    console.log("❎ Frontend disconnected:", socket.id);
   });
 });
 
+// Periodic broadcast (optional)
 setInterval(() => {
   io.emit("temp", latestTemp);
-  io.emit("ultrasonic", latestUltrasonic);
   io.emit("humidity", latestHumidity);
   io.emit("light", latestLight);
+  io.emit("ultrasonic", latestUltrasonic);
 }, 1000);
-const axios = require("axios");
 
+// ChatGPT proxy endpoint
 APP.post("/api/chatgpt", async (req, res) => {
   const { prompt } = req.body;
-
   try {
     const gptRes = await axios.post(
       "https://api.openai.com/v1/chat/completions",
@@ -183,28 +151,15 @@ APP.post("/api/chatgpt", async (req, res) => {
         },
       }
     );
-
     const reply = gptRes.data.choices[0].message.content;
     res.json({ response: reply });
   } catch (error) {
-    console.error("❌ GPT Error:", error.response?.data || error.message);
+    console.error("❌ ChatGPT Error:", error.response?.data || error.message);
     res.status(500).json({ error: "ChatGPT call failed" });
   }
 });
 
+// Start server
 server.listen(8000, () => {
-  console.log("Server is running on port 8000");
-});
-
-client.on("message", (TOPIC, payload) => {
-  console.log("Received from broker:", TOPIC, payload.toString());
-  if (TOPIC === "temp") {
-    latestTemp = payload.toString();
-  } else if (TOPIC === "ultrasonic") {
-    latestUltrasonic = payload.toString();
-  } else if (TOPIC === "humidity") {
-    latestHumidity = payload.toString();
-  } else if (TOPIC === "light") {
-    latestLight = payload.toString();
-  }
+  console.log("🚀 Server running on http://localhost:8000");
 });

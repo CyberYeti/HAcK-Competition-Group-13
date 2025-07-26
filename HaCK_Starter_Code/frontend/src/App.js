@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import io from "socket.io-client";
-import ChatGPTDecoder from "./ChatGPTDecoder"; // 👈 Import it
+import ChatGPTDecoder from "./ChatGPTDecoder";
+import LiveSensorData from "./components/LiveSensorData";
 
 const socket = io("http://localhost:8000");
 
@@ -25,10 +26,15 @@ function App() {
   return (
     <div className="app" style={{ padding: "2rem" }}>
       <h1>🕵️ Operator Dashboard</h1>
-      {pictureStatus && <p style={{ color: "green" }}>{pictureStatus}</p>}
 
-      {/* 👇 Insert ChatGPT panel here */}
+      {/* ✅ Show the ChatGPT decoder */}
       <ChatGPTDecoder />
+
+      {/* ✅ Show the live sensor data */}
+      <LiveSensorData />
+
+      {/* ✅ Status update (optional) */}
+      {pictureStatus && <p style={{ color: "green" }}>{pictureStatus}</p>}
     </div>
   );
 }
