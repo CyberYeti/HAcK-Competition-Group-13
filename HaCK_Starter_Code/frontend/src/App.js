@@ -14,6 +14,10 @@ function App() {
     setOpMessage(e.target.value);
   };
 
+  const testSubmit = () => {
+    setOpMessage("")
+    socket.emit("display", opMessage)
+  }
 
   useEffect(() => {
     socket.on('connect', () => console.log('Connected:', socket.id));
@@ -45,6 +49,9 @@ function App() {
         <button type="button" onClick={testSubmit}>
           Press To Send Message
         </button> 
+        <p>
+          {pi1}
+        </p>
       </div>
     </div>
 

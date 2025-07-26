@@ -98,6 +98,7 @@ let latestTemp = null;
 let latestUltrasonic = null;
 let latestHumidity = null;
 let latestLight = null;
+let pi1 = null;
 
 io.on("connection", (socket) => {
   console.log("Frontend connected to socket");
@@ -155,6 +156,7 @@ setInterval(() => {
   io.emit('ultrasonic', latestUltrasonic);
   io.emit('humidity', latestHumidity);
   io.emit('light', latestLight)
+  io.emit('pi1', pi1)
 }, 1000);
 
 server.listen(8000, () => {
@@ -174,6 +176,10 @@ client.on('message', (TOPIC, payload) => {
   }
   else if ( TOPIC === 'light') {
     latestLight = payload.toString();
+  }
+  else if ( TOPIC === 'pi1') {
+    pi1 = payload.toString();
+    console.log(payload.toString())
   }
 });
 
