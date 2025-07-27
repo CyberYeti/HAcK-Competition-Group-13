@@ -26,101 +26,78 @@ const client = MQTT.connect(process.env.CONNECT_URL, {
   password: process.env.MQTT_PASS,
   reconnectPeriod: 10000,
   debug: true,
-  rejectUnauthorized: false, // Add this line for testing, should be removed in production
+  rejectUnauthorized: false, // ⚠️ Keep false for local testing, remove in prod
 });
 
-// Used for debugging
-
-client.on("error", function (error) {
-  console.error("Connection error: ", error);
+// MQTT Event Listeners
+client.on("error", (error) => {
+  console.error("MQTT Connection error:", error);
 });
 
-client.on("close", function () {
-  console.log("Connection closed");
+client.on("close", () => {
+  console.log("MQTT Connection closed");
 });
 
-client.on("offline", function () {
-  console.log("Client went offline");
+client.on("offline", () => {
+  console.log("MQTT Client offline");
 });
 
-client.on("reconnect", function () {
-  console.log("Attempting to reconnect...");
+client.on("reconnect", () => {
+  console.log("MQTT attempting to reconnect...");
 });
 
-// MQTT Connection
-
+// MQTT Subscribe Topics
 client.on("connect", async () => {
-  console.log("Connected");
+  console.log("✅ MQTT Connected");
 
-  client.subscribe("ultrasonic", (err) => {
-    if (err) {
-      console.error("Subscription error for 'ultrasonic': ", err);
-    } else {
-      console.log("Subscribed to 'ultrasonic'");
-    }
-  });
-
-  client.subscribe("temp", (err) => {
-    if (err) {
-      console.error("Subscription error for 'temp': ", err);
-    } else {
-      console.log("Subscribed to 'temp'");
-    }
-  });
-
-  client.subscribe("humidity", (err) => {
-    if (err) {
-      console.error("Subscription error for 'temp': ", err);
-    } else {
-      console.log("Subscribed to 'humidity'");
-    }
-  });
-
-  client.subscribe("light", (err) => {
-    if (err) {
-      console.error("Subscription error for 'light': ", err);
-    } else {
-      console.log("Subscribed to 'light'");
-    }
+  ["ultrasonic", "temp", "humidity", "light"].forEach((topic) => {
+    client.subscribe(topic, (err) => {
+      if (err) {
+        console.error(`❌ Subscription error for '${topic}':`, err);
+      } else {
+        console.log(`📡 Subscribed to '${topic}'`);
+      }
+    });
   });
 });
 
-const corsOptions = {
-  origin: "*",
-};
-
-APP.use(cors(corsOptions));
+// Allow all origins (CORS)
+APP.use(cors({ origin: "*" }));
 APP.use(express.json());
 
-// Readings from sensors
+// Store latest sensor readings
 let latestTemp = null;
 let latestUltrasonic = null;
 let latestHumidity = null;
 let latestLight = null;
 
+// WebSocket Handling
 io.on("connection", (socket) => {
-  console.log("Frontend connected to socket");
+  console.log("🟢 Frontend connected to socket");
 
-  // Send the latest sensor data to the newly connected client
-  if (latestTemp) {
-    socket.emit("temp", latestTemp);
-  }
+  // Initial data
+  if (latestTemp) socket.emit("temp", latestTemp);
   if (latestUltrasonic) socket.emit("ultrasonic", latestUltrasonic);
-  if (latestLight) {
-    socket.emit("light", latestLight);
-  }
+  if (latestHumidity) socket.emit("humidity", latestHumidity);
+  if (latestLight) socket.emit("light", latestLight);
 
-  // Listen for messages from the frontend
+  // 🖥️ OLED Message
+  socket.on("oled_message", (data) => {
+    const text = data.message || "";
+    console.log("📤 Sending to OLED screen:", text);
+    client.publish("oled_display", text.toString());
+  });
+
+  // 🧪 Raw display channel
   socket.on("display", (message) => {
-    console.log("Received message from frontend:", message);
+    console.log("🧪 Received 'display':", message);
     client.publish("display", message.toString());
   });
 
-  // Handle take picture request
+  // 📸 Take picture and analyze
   socket.on("take_picture", () => {
     console.log("📸 Taking picture and getting AI description...");
 
-    // Execute the Python script
     const pythonProcess = spawn(
       "python3",
       ["../AI/receive.py", "get_description"],
@@ -130,34 +107,31 @@ io.on("connection", (socket) => {
     );
 
     pythonProcess.stdout.on("data", (data) => {
-      console.log(`Python output: ${data}`);
+      console.log(`🐍 Python output: ${data}`);
     });
 
     pythonProcess.stderr.on("data", (data) => {
-      console.error(`Python error: ${data}`);
+      console.error(`🐍 Python error: ${data}`);
     });
 
     pythonProcess.on("close", (code) => {
-      console.log(`Python script finished with code ${code}`);
-      if (code === 0) {
-        socket.emit("picture_taken", {
-          success: true,
-          message: "Picture analyzed successfully!",
-        });
-      } else {
-        socket.emit("picture_taken", {
-          success: false,
-          message: "Failed to analyze picture",
-        });
-      }
+      console.log(`📦 Python script finished with code ${code}`);
+      socket.emit("picture_taken", {
+        success: code === 0,
+        message:
+          code === 0
+            ? "Picture analyzed successfully!"
+            : "Failed to analyze picture",
+      });
     });
   });
 
   socket.on("disconnect", () => {
-    console.log("Frontend disconnected from socket");
+    console.log("🔴 Frontend disconnected from socket");
   });
 });
 
+// Emit sensor values every 1 second
 setInterval(() => {
   io.emit("temp", latestTemp);
   io.emit("ultrasonic", latestUltrasonic);
@@ -165,19 +139,30 @@ setInterval(() => {
   io.emit("light", latestLight);
 }, 1000);
 
-server.listen(8000, () => {
-  console.log("Server is running on port 8000");
+// Update latest values when received from broker
+client.on("message", (TOPIC, payload) => {
+  const value = payload.toString();
+  console.log("📥 MQTT message:", TOPIC, value);
+
+  switch (TOPIC) {
+    case "temp":
+      latestTemp = value;
+      break;
+    case "ultrasonic":
+      latestUltrasonic = value;
+      break;
+    case "humidity":
+      latestHumidity = value;
+      break;
+    case "light":
+      latestLight = value;
+      break;
+    default:
+      console.warn("⚠️ Unknown topic:", TOPIC);
+  }
 });
 
-client.on("message", (TOPIC, payload) => {
-  console.log("Received from broker:", TOPIC, payload.toString());
-  if (TOPIC === "temp") {
-    latestTemp = payload.toString();
-  } else if (TOPIC === "ultrasonic") {
-    latestUltrasonic = payload.toString();
-  } else if (TOPIC === "humidity") {
-    latestHumidity = payload.toString();
-  } else if (TOPIC === "light") {
-    latestLight = payload.toString();
-  }
+// Start server
+server.listen(8000, () => {
+  console.log("🚀 Server is running on port 8000");
 });

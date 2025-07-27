@@ -12,6 +12,7 @@ function App() {
   const [uploadedImage, setUploadedImage] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
   const [pictureStatus, setPictureStatus] = useState("");
+  const [oledText, setOledText] = useState(""); // 🆕 OLED input
 
   useEffect(() => {
     socket.on("connect", () => {
@@ -30,7 +31,7 @@ function App() {
 
   const handleCapture = () => {
     setCapturedImage("/placeholder.png");
-    setUploadedImage(null); // clear upload if using placeholder
+    setUploadedImage(null);
     setPromptInput("What do you see in this image?");
   };
 
@@ -60,7 +61,6 @@ function App() {
     formData.append("prompt", prompt);
 
     try {
-      // ✅ this must go to /api/chatgpt-image
       const res = await axios.post(
         "http://localhost:8000/api/chatgpt-image",
         formData,
@@ -113,23 +113,64 @@ function App() {
     setPromptInput("");
   };
 
+  const handleSendToOLED = () => {
+    if (!oledText.trim()) return;
+    socket.emit("oled_message", { message: oledText }); // 🟢 Emit to server
+    setOledText(""); // Clear input
+  };
+
   return (
     <div style={{ padding: "2rem", maxWidth: "600px", margin: "0 auto" }}>
-      <h1 style={{ textAlign: "center" }}>🕵️ Operator Dashboard</h1>
+      <h1 style={{ textAlign: "center" }}> Operator Dashboard</h1>
 
-      {/* 🖼 Upload Image */}
-      <div>
-        <input type="file" accept="image/*" onChange={handleFileUpload} />
+      {/* 📡 Sensor Data */}
+      <div style={{ marginBottom: "1.5rem" }}>
+        <LiveSensorData />
       </div>
 
-      {/* 📸 Capture Image */}
-      <div style={{ textAlign: "center", marginTop: "1rem" }}>
+      {/* 🖥️ Send to OLED Text Box */}
+      <div style={{ margin: "2rem 0", textAlign: "center" }}>
+        <input
+          type="text"
+          placeholder="Type a message for the OLED..."
+          value={oledText}
+          onChange={(e) => setOledText(e.target.value)}
+          style={{
+            padding: "0.5rem 1rem",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            width: "100%",
+            maxWidth: "400px",
+            fontSize: "1rem",
+          }}
+        />
+        <button
+          onClick={handleSendToOLED}
+          style={{
+            marginLeft: "1rem",
+            padding: "0.5rem 1rem",
+            fontSize: "1rem",
+          }}
+        >
+          📤 Send to OLED
+        </button>
+      </div>
+
+      {/* 📷 Upload / Placeholder */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <input type="file" accept="image/*" onChange={handleFileUpload} />
         <button onClick={handleCapture}>📸 Use Placeholder</button>
       </div>
 
-      {/* 📷 Show Captured/Uploaded */}
+      {/* 🖼 Show Image */}
       {capturedImage && (
-        <div style={{ marginTop: "10px" }}>
+        <div style={{ marginBottom: "1rem" }}>
           <img
             src={capturedImage}
             alt="Captured"
@@ -139,32 +180,58 @@ function App() {
       )}
 
       {(uploadedImage || capturedImage) && (
-        <div style={{ marginTop: "1rem", textAlign: "center" }}>
+        <div style={{ marginBottom: "1.5rem", textAlign: "center" }}>
           <button onClick={handleAnalyze}>🔍 Analyze Image</button>
         </div>
       )}
 
-      {/* 💬 Prompt Input */}
-      <div style={{ marginTop: "2rem" }}>
+      {/* 📝 Text Input in Middle */}
+      <div style={{ marginBottom: "2rem" }}>
         <textarea
           placeholder="Ask the assistant anything..."
           value={promptInput}
           onChange={(e) => setPromptInput(e.target.value)}
           rows={3}
-          style={{ width: "100%", padding: "0.5rem", borderRadius: "4px" }}
+          style={{
+            width: "100%",
+            padding: "0.75rem",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            resize: "none",
+            fontSize: "1rem",
+          }}
         />
-        <button onClick={handleSend} style={{ marginTop: "0.5rem" }}>
-          Send
-        </button>
+        <div
+          style={{
+            display: "flex",
+            gap: "1rem",
+            justifyContent: "flex-end",
+            marginTop: "0.5rem",
+          }}
+        >
+          <button onClick={handleSend}>Send</button>
+          <button onClick={handleAnalyze}>🔍 Analyze Image</button>
+        </div>
       </div>
 
-      {/* 🧠 Chat History */}
-      <div style={{ marginTop: "2rem" }}>
+      {/* 🧠 Chat History at Bottom */}
+      <div
+        style={{
+          maxHeight: "300px",
+          overflowY: "auto",
+          padding: "1rem",
+          border: "1px solid #ccc",
+          borderRadius: "6px",
+          background: "#fafafa",
+          marginBottom: "1rem",
+        }}
+      >
+        <h3 style={{ marginTop: 0 }}>Assistant Conversation</h3>
         {chat.map((msg, i) => (
           <div
             key={i}
             style={{
-              background: msg.role === "user" ? "#eef" : "#f5f5f5",
+              background: msg.role === "user" ? "#e6f0ff" : "#f0f0f0",
               padding: "0.75rem",
               borderRadius: "6px",
               marginBottom: "0.5rem",
@@ -176,12 +243,7 @@ function App() {
         ))}
       </div>
 
-      {/* 📡 Sensor Data */}
-      <div style={{ marginTop: "2rem" }}>
-        <LiveSensorData />
-      </div>
-
-      {/* ✅ Status */}
+      {/* ✅ Status Message */}
       {pictureStatus && <p style={{ color: "green" }}>{pictureStatus}</p>}
     </div>
   );
