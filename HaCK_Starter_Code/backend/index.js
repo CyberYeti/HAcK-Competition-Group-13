@@ -1,152 +1,32 @@
 require("dotenv").config();
-const fs = require("fs");
-const cors = require("cors");
 const express = require("express");
-const http = require("http");
-const MQTT = require("mqtt");
-const { spawn } = require("child_process");
-const APP = express();
-const server = http.createServer(APP);
-const { Server } = require("socket.io");
-
-// Enable CORS for frontend
-APP.use(cors({ origin: "*" }));
-APP.use(express.json());
-
-// Initialize socket.io
-
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
-});
-
-const CLIENTID = "frontend";
-
-const client = MQTT.connect(process.env.CONNECT_URL, {
-  clientId: CLIENTID,
-  clean: true,
-  connectTimeout: 3000,
-  username: process.env.MQTT_USER,
-  password: process.env.MQTT_PASS,
-  reconnectPeriod: 10000,
-  rejectUnauthorized: false, // ⚠️ Use false only for testing
-});
-
-// MQTT Debugging
-client.on("error", (err) => console.error("❌ MQTT Error:", err));
-client.on("close", () => console.log("🔌 MQTT Connection closed"));
-client.on("offline", () => console.log("⚠️ MQTT Client offline"));
-client.on("reconnect", () => console.log("🔁 MQTT Reconnecting..."));
-
-// Sensor state
-let latestTemp = null;
-let latestHumidity = null;
-let latestLight = null;
-let latestUltrasonic = null;
-
-// MQTT Topics to subscribe to
-const topics = ["temp", "humidity", "light", "ultrasonic"];
-
-// On MQTT Connect
-client.on("connect", () => {
-  console.log("✅ MQTT Connected");
-  topics.forEach((topic) => {
-    client.subscribe(topic, (err) => {
-      if (err) {
-        console.error(`❌ Subscription failed: ${topic}`, err);
-      } else {
-        console.log(`📡 Subscribed to '${topic}'`);
-      }
-    });
-  });
-});
-
-// Receive MQTT messages
-client.on("message", (topic, payload) => {
-  const value = payload.toString();
-  console.log(`📥 ${topic}: ${value}`);
-
-  if (topic === "temp") latestTemp = value;
-  if (topic === "humidity") latestHumidity = value;
-  if (topic === "light") latestLight = value;
-  if (topic === "ultrasonic") latestUltrasonic = value;
-
-  io.emit(topic, value); // 📤 Emit to frontend via socket.io
-});
-
-// Socket.IO handlers
-io.on("connection", (socket) => {
-  console.log("🧠 Frontend connected:", socket.id);
-
-  // Send latest on connect
-  if (latestTemp) socket.emit("temp", latestTemp);
-  if (latestHumidity) socket.emit("humidity", latestHumidity);
-  if (latestLight) socket.emit("light", latestLight);
-  if (latestUltrasonic) socket.emit("ultrasonic", latestUltrasonic);
-
-  socket.on("display", (message) => {
-    console.log("📲 Message from frontend:", message);
-    client.publish("display", message.toString());
-  });
-
-  socket.on("take_picture", () => {
-    console.log("📸 Taking picture...");
-    const pythonProcess = spawn(
-      "python3",
-      ["../AI/receive.py", "get_description"],
-      {
-        cwd: __dirname,
-      }
-    );
-
-    pythonProcess.stdout.on("data", (data) => {
-      console.log(`Python output: ${data}`);
-    });
-
-    pythonProcess.stderr.on("data", (data) => {
-      console.error(`Python error: ${data}`);
-    });
-
-    pythonProcess.on("close", (code) => {
-      console.log(`Python script finished with code ${code}`);
-      if (code === 0) {
-        socket.emit("picture_taken", {
-          success: true,
-          message: "Picture analyzed successfully!",
-        });
-      } else {
-        socket.emit("picture_taken", {
-          success: false,
-          message: "Failed to analyze picture",
-        });
-      }
-    });
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Frontend disconnected from socket");
-  });
-});
-
-setInterval(() => {
-  io.emit("temp", latestTemp);
-  io.emit("ultrasonic", latestUltrasonic);
-  io.emit("humidity", latestHumidity);
-  io.emit("light", latestLight);
-}, 1000);
+const multer = require("multer");
+const cors = require("cors");
 const axios = require("axios");
+const app = express();
+const port = 8000;
 
-APP.post("/api/chatgpt", async (req, res) => {
+// CORS and JSON support
+app.use(cors());
+app.use(express.json());
+
+// Set up multer to store image in memory
+const upload = multer({ storage: multer.memoryStorage() });
+
+// ✅ ROUTE: TEXT-ONLY PROMPT
+app.post("/api/chatgpt", async (req, res) => {
   const { prompt } = req.body;
 
+  if (!prompt) return res.status(400).json({ error: "Missing prompt" });
+  console.log("📥 Received text prompt:", prompt);
+
   try {
-    const gptRes = await axios.post(
+    const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
         model: "gpt-4",
         messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
       },
       {
         headers: {
@@ -156,27 +36,71 @@ APP.post("/api/chatgpt", async (req, res) => {
       }
     );
 
-    const reply = gptRes.data.choices[0].message.content;
-    res.json({ response: reply });
+    const reply = response.data.choices[0].message.content;
+    console.log("🤖 GPT reply:", reply);
+    res.json({ reply });
   } catch (error) {
-    console.error("❌ GPT Error:", error.response?.data || error.message);
-    res.status(500).json({ error: "ChatGPT call failed" });
+    console.error("❌ Text API error:", error.response?.data || error.message);
+    res.status(500).json({ error: "Failed to get GPT reply" });
   }
 });
 
-server.listen(8000, () => {
-  console.log("Server is running on port 8000");
+// ✅ ROUTE: IMAGE + PROMPT (GPT-4 VISION)
+app.post("/api/chatgpt-image", upload.single("image"), async (req, res) => {
+  const { prompt } = req.body;
+  const file = req.file;
+
+  if (!file || !prompt) {
+    console.error("❌ Missing file or prompt");
+    return res.status(400).json({ error: "Image and prompt required" });
+  }
+
+  console.log("📥 Received image prompt:", prompt);
+  console.log("📷 File name:", file.originalname, "| Type:", file.mimetype);
+
+  try {
+    const base64Image = `data:${file.mimetype};base64,${file.buffer.toString(
+      "base64"
+    )}`;
+
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: { url: base64Image },
+              },
+            ],
+          },
+        ],
+        max_tokens: 1000,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const reply = response.data.choices[0].message.content;
+    console.log("🧠 GPT-4 Vision replied:", reply);
+    res.json({ reply });
+  } catch (error) {
+    console.error(
+      "❌ Vision API error:",
+      error.response?.data || error.message
+    );
+    res.status(500).json({ error: "Failed to analyze image" });
+  }
 });
 
-client.on("message", (TOPIC, payload) => {
-  console.log("Received from broker:", TOPIC, payload.toString());
-  if (TOPIC === "temp") {
-    latestTemp = payload.toString();
-  } else if (TOPIC === "ultrasonic") {
-    latestUltrasonic = payload.toString();
-  } else if (TOPIC === "humidity") {
-    latestHumidity = payload.toString();
-  } else if (TOPIC === "light") {
-    latestLight = payload.toString();
-  }
+app.listen(port, () => {
+  console.log(`🚀 Server running at http://localhost:${port}`);
 });
