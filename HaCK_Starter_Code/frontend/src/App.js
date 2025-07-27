@@ -12,7 +12,7 @@ function App() {
   const [uploadedImage, setUploadedImage] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
   const [pictureStatus, setPictureStatus] = useState("");
-  const [oledText, setOledText] = useState(""); // 🆕 OLED input
+  const [oledText, setOledText] = useState("");
 
   useEffect(() => {
     socket.on("connect", () => {
@@ -43,46 +43,10 @@ function App() {
     }
   };
 
-  const handleAnalyze = async () => {
-    const formData = new FormData();
-
-    if (uploadedImage) {
-      formData.append("image", uploadedImage);
-    } else if (capturedImage) {
-      const res = await fetch(capturedImage);
-      const blob = await res.blob();
-      formData.append("image", blob, "captured.png");
-    } else {
-      console.error("❌ No image to send.");
-      return;
-    }
-
-    const prompt = promptInput || "Who is in this image?";
-    formData.append("prompt", prompt);
-
-    try {
-      const res = await axios.post(
-        "http://localhost:8000/api/chatgpt-image",
-        formData,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        }
-      );
-
-      const aiReply = res.data.reply || "(No response)";
-      setChat((prev) => [
-        ...prev,
-        { role: "user", content: prompt },
-        { role: "assistant", content: aiReply },
-      ]);
-      setPromptInput("");
-    } catch (err) {
-      console.error("❌ Vision error:", err);
-      setChat((prev) => [
-        ...prev,
-        { role: "assistant", content: "❌ Failed to analyze image." },
-      ]);
-    }
+  const handleSendToOLED = () => {
+    if (!oledText.trim()) return;
+    socket.emit("oled_message", { message: oledText });
+    setOledText("");
   };
 
   const handleSend = async () => {
@@ -91,44 +55,73 @@ function App() {
     const userMessage = { role: "user", content: promptInput };
     setChat((prev) => [...prev, userMessage]);
 
-    try {
-      const res = await axios.post("http://localhost:8000/api/chatgpt", {
-        prompt: promptInput,
-      });
+    if (uploadedImage || capturedImage) {
+      const formData = new FormData();
 
-      const aiReply = res.data.reply || "(No response)";
-      const assistantMessage = { role: "assistant", content: aiReply };
-      setChat((prev) => [...prev, assistantMessage]);
-    } catch (err) {
-      console.error("Text prompt error:", err);
-      setChat((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "⚠️ Error getting reply from assistant.",
-        },
-      ]);
+      if (uploadedImage) {
+        formData.append("image", uploadedImage);
+      } else if (capturedImage) {
+        const res = await fetch(capturedImage);
+        const blob = await res.blob();
+        formData.append("image", blob, "captured.png");
+      }
+
+      formData.append("prompt", promptInput);
+
+      try {
+        const res = await axios.post(
+          "http://localhost:8000/api/chatgpt-image",
+          formData,
+          {
+            headers: { "Content-Type": "multipart/form-data" },
+          }
+        );
+
+        const aiReply = res.data.reply || "(No response)";
+        setChat((prev) => [...prev, { role: "assistant", content: aiReply }]);
+      } catch (err) {
+        console.error("Image+Prompt error:", err);
+        setChat((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "❌ Failed to analyze image with prompt.",
+          },
+        ]);
+      }
+    } else {
+      try {
+        const res = await axios.post("http://localhost:8000/api/chatgpt", {
+          prompt: promptInput,
+        });
+
+        const aiReply = res.data.reply || "(No response)";
+        setChat((prev) => [...prev, { role: "assistant", content: aiReply }]);
+      } catch (err) {
+        console.error("Text-only error:", err);
+        setChat((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "⚠️ Error getting reply from assistant.",
+          },
+        ]);
+      }
     }
 
     setPromptInput("");
   };
 
-  const handleSendToOLED = () => {
-    if (!oledText.trim()) return;
-    socket.emit("oled_message", { message: oledText }); // 🟢 Emit to server
-    setOledText(""); // Clear input
-  };
-
   return (
     <div style={{ padding: "2rem", maxWidth: "600px", margin: "0 auto" }}>
-      <h1 style={{ textAlign: "center" }}> Operator Dashboard</h1>
+      <h1 style={{ textAlign: "center" }}>🕵️ Operator Dashboard</h1>
 
-      {/* 📡 Sensor Data */}
+      {/* Sensor Data */}
       <div style={{ marginBottom: "1.5rem" }}>
         <LiveSensorData />
       </div>
 
-      {/* 🖥️ Send to OLED Text Box */}
+      {/* OLED Text Sender */}
       <div style={{ margin: "2rem 0", textAlign: "center" }}>
         <input
           type="text"
@@ -156,7 +149,7 @@ function App() {
         </button>
       </div>
 
-      {/* 📷 Upload / Placeholder */}
+      {/* Upload or Placeholder Image */}
       <div
         style={{
           display: "flex",
@@ -168,7 +161,7 @@ function App() {
         <button onClick={handleCapture}>📸 Use Placeholder</button>
       </div>
 
-      {/* 🖼 Show Image */}
+      {/* Display Image */}
       {capturedImage && (
         <div style={{ marginBottom: "1rem" }}>
           <img
@@ -179,13 +172,7 @@ function App() {
         </div>
       )}
 
-      {(uploadedImage || capturedImage) && (
-        <div style={{ marginBottom: "1.5rem", textAlign: "center" }}>
-          <button onClick={handleAnalyze}>🔍 Analyze Image</button>
-        </div>
-      )}
-
-      {/* 📝 Text Input in Middle */}
+      {/* Prompt Input */}
       <div style={{ marginBottom: "2rem" }}>
         <textarea
           placeholder="Ask the assistant anything..."
@@ -209,12 +196,11 @@ function App() {
             marginTop: "0.5rem",
           }}
         >
-          <button onClick={handleSend}>Send</button>
-          <button onClick={handleAnalyze}>🔍 Analyze Image</button>
+          <button onClick={handleSend}>📤 Send</button>
         </div>
       </div>
 
-      {/* 🧠 Chat History at Bottom */}
+      {/* Chat Log */}
       <div
         style={{
           maxHeight: "300px",
@@ -243,7 +229,7 @@ function App() {
         ))}
       </div>
 
-      {/* ✅ Status Message */}
+      {/* Picture Status */}
       {pictureStatus && <p style={{ color: "green" }}>{pictureStatus}</p>}
     </div>
   );
