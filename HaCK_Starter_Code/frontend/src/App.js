@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import io from "socket.io-client";
 import LiveSensorData from "./components/LiveSensorData";
 import axios from "axios";
+import {saveAs} from "file-saver";
 
 // Connect to backend
 const socket = io("http://localhost:8000");
@@ -27,6 +28,23 @@ function App() {
       socket.off("picture_taken");
     };
   }, []);
+
+  //Test Cam Stuff
+  // const handleDownloadFromESP32 = () => {
+  //   const url = "http://192.168.50.75/1024x768.jpg"; // Replace with your ESP32-CAM snapshot URL
+  //   const filename = `esp32-snapshot-${Date.now()}.jpg`;
+
+  //   saveAs(url, filename);
+  // };
+
+  const esp32Ip = "192.168.50.75";
+  const [imgSrc, setImgSrc] = useState(null);
+
+  const handleTakePicture = async () => {
+    saveAs("http://192.168.50.75/1024x768.jpg", `esp32-snapshot`);
+    setImgSrc("http://192.168.50.75/1024x768.jpg")
+  };
+  
 
   const handleCapture = () => {
     setCapturedImage("/placeholder.png");
@@ -125,6 +143,12 @@ function App() {
       {/* 📸 Capture Image */}
       <div style={{ textAlign: "center", marginTop: "1rem" }}>
         <button onClick={handleCapture}>📸 Use Placeholder</button>
+      </div>
+
+      {/*Test Cam stuff*/}
+      <div>
+        <button onClick={handleTakePicture}>Take Picture</button>
+        {imgSrc && <img src={"http://192.168.50.75/1024x768.jpg"} alt="ESP32 Snapshot" style={{ width: "100%" }} />}
       </div>
 
       {/* 📷 Show Captured/Uploaded */}
