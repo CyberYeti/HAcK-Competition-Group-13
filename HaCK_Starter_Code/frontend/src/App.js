@@ -44,9 +44,10 @@ function App() {
   };
 
   const handleSendToOLED = () => {
-    if (!oledText.trim()) return;
-    socket.emit("oled_message", { message: oledText });
-    setOledText("");
+    // if (!oledText.trim()) return;
+    // socket.emit("oled_message", { message: oledText });
+    // setOledText("");
+    socket.emit("take_picture");
   };
 
   const handleSend = async () => {

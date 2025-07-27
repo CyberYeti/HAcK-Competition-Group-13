@@ -3,25 +3,23 @@ const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
 const axios = require("axios");
+const fs = require("fs");
 const http = require("http");
-const { Server } = require("socket.io");
 const MQTT = require("mqtt");
+const { spawn } = require("child_process");
+const { Server } = require("socket.io");
 
-// Setup Express + HTTP + Socket.io
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
 
-// Middleware
 app.use(cors());
 app.use(express.json());
-
-// Multer config (image upload to memory)
 const upload = multer({ storage: multer.memoryStorage() });
 
-// MQTT Setup
+// MQTT setup
 const client = MQTT.connect(process.env.CONNECT_URL, {
   clientId: "frontend",
   clean: true,
@@ -32,11 +30,8 @@ const client = MQTT.connect(process.env.CONNECT_URL, {
   rejectUnauthorized: false,
 });
 
-// ✅ MQTT Event Handlers
 client.on("connect", () => {
   console.log("✅ MQTT connected");
-
-  // Subscribe to any topics if needed
   client.subscribe("temp");
   client.subscribe("humidity");
   client.subscribe("light");
@@ -44,14 +39,31 @@ client.on("connect", () => {
 });
 
 client.on("error", (err) => console.error("❌ MQTT error:", err));
+
+let latestTemp = null;
+let latestUltrasonic = null;
+let latestHumidity = null;
+let latestLight = null;
+
 client.on("message", (topic, payload) => {
-  console.log("📡 MQTT:", topic, "->", payload.toString());
-  io.emit(topic, payload.toString()); // Broadcast sensor data to frontend
+  const data = payload.toString();
+  console.log("📡 MQTT:", topic, "->", data);
+
+  if (topic === "temp") latestTemp = data;
+  else if (topic === "ultrasonic") latestUltrasonic = data;
+  else if (topic === "humidity") latestHumidity = data;
+  else if (topic === "light") latestLight = data;
+
+  io.emit(topic, data);
 });
 
-// ✅ WebSocket logic
 io.on("connection", (socket) => {
   console.log("🔌 Client connected via socket");
+
+  if (latestTemp) socket.emit("temp", latestTemp);
+  if (latestUltrasonic) socket.emit("ultrasonic", latestUltrasonic);
+  if (latestHumidity) socket.emit("humidity", latestHumidity);
+  if (latestLight) socket.emit("light", latestLight);
 
   socket.on("oled_message", (data) => {
     const msg = data.message;
@@ -59,10 +71,49 @@ io.on("connection", (socket) => {
     client.publish("display", msg);
   });
 
+  socket.on("take_picture", () => {
+    console.log("📸 Taking picture and getting AI description...");
+    const pythonProcess = spawn(
+      "python3",
+      ["../AI/receive.py", "get_description"],
+      { cwd: __dirname }
+    );
+
+    pythonProcess.stdout.on("data", (data) => {
+      console.log(`Python output: ${data}`);
+    });
+
+    pythonProcess.stderr.on("data", (data) => {
+      console.error(`Python error: ${data}`);
+    });
+
+    pythonProcess.on("close", (code) => {
+      console.log(`Python script finished with code ${code}`);
+      if (code === 0) {
+        socket.emit("picture_taken", {
+          success: true,
+          message: "Picture analyzed successfully!",
+        });
+      } else {
+        socket.emit("picture_taken", {
+          success: false,
+          message: "Failed to analyze picture",
+        });
+      }
+    });
+  });
+
   socket.on("disconnect", () => {
     console.log("❌ Client disconnected");
   });
 });
+
+setInterval(() => {
+  io.emit("temp", latestTemp);
+  io.emit("ultrasonic", latestUltrasonic);
+  io.emit("humidity", latestHumidity);
+  io.emit("light", latestLight);
+}, 1000);
 
 // ✅ ROUTE: TEXT-ONLY PROMPT
 app.post("/api/chatgpt", async (req, res) => {
@@ -147,7 +198,6 @@ app.post("/api/chatgpt-image", upload.single("image"), async (req, res) => {
   }
 });
 
-// ✅ Start the combined server
 const PORT = process.env.PORT || 8000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
