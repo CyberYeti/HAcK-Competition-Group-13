@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from "react";
 import io from "socket.io-client";
-import LiveSensorData from "./components/LiveSensorData";
 import axios from "axios";
+import LiveSensorData from "./components/LiveSensorData";
 
-// Connect to backend
 const socket = io("http://localhost:8000");
 
 function App() {
@@ -12,7 +11,7 @@ function App() {
   const [uploadedImage, setUploadedImage] = useState(null);
   const [capturedImage, setCapturedImage] = useState(null);
   const [pictureStatus, setPictureStatus] = useState("");
-  const [oledText, setOledText] = useState("");
+  const [oledText, setOledText] = useState(""); // 🆕 OLED input
 
   useEffect(() => {
     socket.on("connect", () => {
@@ -43,11 +42,15 @@ function App() {
     }
   };
 
-  const handleSendToOLED = () => {
-    // if (!oledText.trim()) return;
-    // socket.emit("oled_message", { message: oledText });
-    // setOledText("");
+  const handleTakePicture = () => {
     socket.emit("take_picture");
+  };
+
+  const handleSendToOLED = () => {
+    if (oledText.trim()) {
+      socket.emit("oled_message", { message: oledText });
+      setOledText("");
+    }
   };
 
   const handleSend = async () => {
@@ -58,7 +61,6 @@ function App() {
 
     if (uploadedImage || capturedImage) {
       const formData = new FormData();
-
       if (uploadedImage) {
         formData.append("image", uploadedImage);
       } else if (capturedImage) {
@@ -66,7 +68,6 @@ function App() {
         const blob = await res.blob();
         formData.append("image", blob, "captured.png");
       }
-
       formData.append("prompt", promptInput);
 
       try {
@@ -77,7 +78,6 @@ function App() {
             headers: { "Content-Type": "multipart/form-data" },
           }
         );
-
         const aiReply = res.data.reply || "(No response)";
         setChat((prev) => [...prev, { role: "assistant", content: aiReply }]);
       } catch (err) {
@@ -95,7 +95,6 @@ function App() {
         const res = await axios.post("http://localhost:8000/api/chatgpt", {
           prompt: promptInput,
         });
-
         const aiReply = res.data.reply || "(No response)";
         setChat((prev) => [...prev, { role: "assistant", content: aiReply }]);
       } catch (err) {
@@ -118,53 +117,38 @@ function App() {
       <h1 style={{ textAlign: "center" }}>🕵️ Operator Dashboard</h1>
 
       {/* Sensor Data */}
-      <div style={{ marginBottom: "1.5rem" }}>
-        <LiveSensorData />
-      </div>
+      <LiveSensorData />
 
-      {/* OLED Text Sender */}
-      <div style={{ margin: "2rem 0", textAlign: "center" }}>
+      {/* OLED Text Input + Button */}
+      <div style={{ marginTop: "1.5rem", display: "flex", gap: "0.5rem" }}>
         <input
           type="text"
-          placeholder="Type a message for the OLED..."
           value={oledText}
           onChange={(e) => setOledText(e.target.value)}
-          style={{
-            padding: "0.5rem 1rem",
-            borderRadius: "6px",
-            border: "1px solid #ccc",
-            width: "100%",
-            maxWidth: "400px",
-            fontSize: "1rem",
-          }}
+          placeholder="Send message to OLED"
+          style={{ flex: 1, padding: "0.5rem", borderRadius: "4px" }}
         />
-        <button
-          onClick={handleSendToOLED}
-          style={{
-            marginLeft: "1rem",
-            padding: "0.5rem 1rem",
-            fontSize: "1rem",
-          }}
-        >
-          📤 Send to OLED
-        </button>
+        <button onClick={handleSendToOLED}>📤 Send to OLED</button>
       </div>
 
-      {/* Upload or Placeholder Image */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: "1.5rem",
-        }}
-      >
+      {/* Take Picture Button */}
+      <div style={{ marginTop: "1rem", textAlign: "center" }}>
+        <button onClick={handleTakePicture}>📸 Take a Picture</button>
+      </div>
+
+      {/* Upload Image */}
+      <div style={{ marginTop: "2rem" }}>
         <input type="file" accept="image/*" onChange={handleFileUpload} />
-        <button onClick={handleCapture}>📸 Use Placeholder</button>
       </div>
 
-      {/* Display Image */}
+      {/* Capture Placeholder */}
+      <div style={{ textAlign: "center", marginTop: "1rem" }}>
+        <button onClick={handleCapture}>📷 Use Placeholder</button>
+      </div>
+
+      {/* Show Captured Image */}
       {capturedImage && (
-        <div style={{ marginBottom: "1rem" }}>
+        <div style={{ marginTop: "10px" }}>
           <img
             src={capturedImage}
             alt="Captured"
@@ -173,52 +157,34 @@ function App() {
         </div>
       )}
 
-      {/* Prompt Input */}
-      <div style={{ marginBottom: "2rem" }}>
+      {/* Analyze Button */}
+      {(uploadedImage || capturedImage) && (
+        <div style={{ marginTop: "1rem", textAlign: "center" }}>
+          <button onClick={handleSend}>🔍 Analyze + Ask</button>
+        </div>
+      )}
+
+      {/* Prompt Text Input */}
+      <div style={{ marginTop: "2rem" }}>
         <textarea
           placeholder="Ask the assistant anything..."
           value={promptInput}
           onChange={(e) => setPromptInput(e.target.value)}
           rows={3}
-          style={{
-            width: "100%",
-            padding: "0.75rem",
-            borderRadius: "6px",
-            border: "1px solid #ccc",
-            resize: "none",
-            fontSize: "1rem",
-          }}
+          style={{ width: "100%", padding: "0.5rem", borderRadius: "4px" }}
         />
-        <div
-          style={{
-            display: "flex",
-            gap: "1rem",
-            justifyContent: "flex-end",
-            marginTop: "0.5rem",
-          }}
-        >
-          <button onClick={handleSend}>📤 Send</button>
-        </div>
+        <button onClick={handleSend} style={{ marginTop: "0.5rem" }}>
+          Send
+        </button>
       </div>
 
-      {/* Chat Log */}
-      <div
-        style={{
-          maxHeight: "300px",
-          overflowY: "auto",
-          padding: "1rem",
-          border: "1px solid #ccc",
-          borderRadius: "6px",
-          background: "#fafafa",
-          marginBottom: "1rem",
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>Assistant Conversation</h3>
+      {/* Chat History */}
+      <div style={{ marginTop: "2rem" }}>
         {chat.map((msg, i) => (
           <div
             key={i}
             style={{
-              background: msg.role === "user" ? "#e6f0ff" : "#f0f0f0",
+              background: msg.role === "user" ? "#eef" : "#f5f5f5",
               padding: "0.75rem",
               borderRadius: "6px",
               marginBottom: "0.5rem",
@@ -230,7 +196,7 @@ function App() {
         ))}
       </div>
 
-      {/* Picture Status */}
+      {/* Status Message */}
       {pictureStatus && <p style={{ color: "green" }}>{pictureStatus}</p>}
     </div>
   );
