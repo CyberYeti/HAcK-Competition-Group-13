@@ -73,11 +73,9 @@ io.on("connection", (socket) => {
 
   socket.on("take_picture", () => {
     console.log("📸 Taking picture and getting AI description...");
-    const pythonProcess = spawn(
-      "python3",
-      ["../AI/receive.py", "get_description"],
-      { cwd: __dirname }
-    );
+    const pythonProcess = spawn("python3", ["../AI/receive.py"], {
+      cwd: __dirname,
+    });
 
     pythonProcess.stdout.on("data", (data) => {
       console.log(`Python output: ${data}`);
