@@ -3,9 +3,14 @@ from time import sleep
 from machine import Pin
 import SimpleDisplay
 
+#Message Stuff
+hasIncMsg = False
+
 def create_callback(display):
     def callback(topic, msg):
+        global hasIncMsg
         text = msg.decode()
+        hasIncMsg = True
         print("Received:", text)
         display.PrintMessage(text)
     return callback
@@ -28,7 +33,7 @@ def read_photoresistor():
     if Vout != 0:
         Rldr = Rfixed * (Vcc - Vout) / Vout
         lumen = A * (Rldr ** B)
-        print(f"[Photoresistor] ADC: {raw}, Vout: {Vout:.2f}V, Rldr: {Rldr:.2f}Ω, Estimated lumen: {lumen:.2f}")
+        #print(f"[Photoresistor] ADC: {raw}, Vout: {Vout:.2f}V, Rldr: {Rldr:.2f}Ω, Estimated lumen: {lumen:.2f}")
         return lumen
     else:
         print("[Photoresistor] ADC value too low to calculate resistance.")
@@ -109,6 +114,8 @@ def getDist():
     return distance_cm
 
 def main():
+    global hasIncMsg
+    hasIncMsg = False
     display = SimpleDisplay.Display(21, 20)
     
     try:
@@ -120,11 +127,26 @@ def main():
         while True:
             client.check_msg()
             
-            client.publish("light", str(read_photoresistor()))
-            client.publish("temp", str(getTemp()))
-            client.publish("humidity", str(getHumidity()))
-            client.publish("ultrasonic", str(getDist()))
+            lumens = read_photoresistor()
+            temp = getTemp()
+            humid = getHumidity()
+            dist = getDist()
             
+            client.publish("light", str(lumens))
+            client.publish("temp", str(temp))
+            client.publish("humidity", str(humid))
+            client.publish("ultrasonic", str(dist))
+            
+            if not hasIncMsg:
+                lines = []
+                lines.append(f"Light: {lumens}")
+                lines.append(f"Temp: {temp}")
+                lines.append(f"Humid: {humid}")
+                lines.append(f"Dist: {dist}")
+                display.PrintLines(lines)
+                
+            if dist < 5:
+                hasIncMsg = False
             
             sleep(0.1)
 
