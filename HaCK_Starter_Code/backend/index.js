@@ -71,10 +71,13 @@ io.on("connection", (socket) => {
     client.publish("display", msg);
   });
 
-  socket.on("take_picture", () => {
-    console.log("📸 Taking picture and getting AI description...");
-    const pythonProcess = spawn("python3", ["../AI/receive.py"], {
-      cwd: __dirname,
+  // Handle take picture request
+  socket.on('take_picture', () => {
+    console.log('📸 Taking picture and getting AI description...');
+    
+    // Execute the Python script
+    const pythonProcess = spawn('python3', ['../AI/receive.py'],  {
+      cwd: __dirname
     });
 
     pythonProcess.stdout.on("data", (data) => {
