@@ -9,9 +9,9 @@ MAX_LINES = 7
 MAX_EMPTY_LINES = 2
 
 class Display():
-    def __init__(self, scl:int, sda:int):
+    def __init__(self, scl:int, sda:int, id = 0):
         # Set up I2C
-        i2c = I2C(0, scl=Pin(scl), sda=Pin(sda), freq=400000)
+        i2c = I2C(id, scl=Pin(scl), sda=Pin(sda), freq=400000)
 
         # Create display object (128x64)
         oled_width = 128
